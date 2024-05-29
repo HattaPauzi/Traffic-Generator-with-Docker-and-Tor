@@ -1,39 +1,53 @@
 FROM ubuntu:20.04
+
 LABEL maintainer="tolgatasci1@gmail.com"
 LABEL version="1"
 LABEL description="It sends traffic using the tor network."
+
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV TZ=Europe/Kiev
+ENV CHROMEDRIVER_DIR=/chromedriver
+ENV PATH=${CHROMEDRIVER_DIR}:${PATH}
+
+# Set timezone
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN apt-get update && apt-get install -y gnupg2
-RUN apt-get install -y ca-certificates
-RUN apt-get install -y wget xvfb unzip curl
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
-RUN echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list
+# Install dependencies and Google Chrome
+RUN apt-get update && apt-get install -y \
+    gnupg2 \
+    ca-certificates \
+    wget \
+    xvfb \
+    unzip \
+    curl \
+    python3-pip \
+    chromium-browser \
+    psmisc \
+    netcat \
+    --no-install-recommends && \
+    wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+    echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list && \
+    apt-get update -y && \
+    apt-get install -y google-chrome-stable && \
+    apt-get dist-upgrade -y && \
+    apt-get install -y tor tor-geoipdb torsocks && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update -y
-RUN apt-get install -y google-chrome-stable
+# Create directory for ChromeDriver
+RUN mkdir -p ${CHROMEDRIVER_DIR}
 
-ENV CHROMEDRIVER_VERSION 102.0.5005.61
-ENV CHROMEDRIVER_DIR /chromedriver
-RUN mkdir $CHROMEDRIVER_DIR
+# Specify the ChromeDriver version
+ENV CHROMEDRIVER_VERSION=114.0.5735.90
 
-RUN CHROMEVER=$(google-chrome --product-version | grep -o "[^\.]*\.[^\.]*\.[^\.]*") && \
-    DRIVERVER=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROMEVER") && \
-    wget -q --continue -P /chromedriver "http://chromedriver.storage.googleapis.com/$DRIVERVER/chromedriver_linux64.zip" && \
-    unzip /chromedriver/chromedriver* -d /chromedriver
+# Download and install ChromeDriver
+RUN wget -q --continue -P ${CHROMEDRIVER_DIR} "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" && \
+    unzip ${CHROMEDRIVER_DIR}/chromedriver* -d ${CHROMEDRIVER_DIR} && \
+    rm ${CHROMEDRIVER_DIR}/chromedriver_linux64.zip
 
-ENV PATH $CHROMEDRIVER_DIR:$PATH
-RUN \
-  apt-get dist-upgrade -y && \
-  apt-get install -y --no-install-recommends tor tor-geoipdb torsocks && \
-  apt-get clean
+# Copy configuration files and scripts
 ADD torrc /etc/tor/torrc
-RUN apt-get install python3-pip -y
-RUN apt-get install -y chromium-browser
-RUN apt-get install -y psmisc netcat
 RUN mkdir -p /scripts
 WORKDIR /scripts
 COPY ./requirements.txt ./
@@ -41,6 +55,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ./entrypoint.sh /scripts/entrypoint.sh
 COPY ./hit.py /scripts/hit.py
 COPY ./refreship.py /scripts/refreship.py
-RUN chmod +x entrypoint.sh
-ENTRYPOINT ["sh","/scripts/entrypoint.sh"]
+RUN chmod +x /scripts/entrypoint.sh
+
+# Set entrypoint and command
+ENTRYPOINT ["sh", "/scripts/entrypoint.sh"]
 CMD ["bash"]
